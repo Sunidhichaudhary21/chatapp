@@ -63,10 +63,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         senderId: (req.user as any).id,
       });
 
-      // Emit to receiver
+      // Only emit to receiver (sender adds it via API response)
       io.to(message.receiverId.toString()).emit("message", message);
-      // Emit to sender (for multi-device or confirmation)
-      io.to(message.senderId.toString()).emit("message", message);
 
       res.status(201).json(message);
     } catch (err) {

@@ -1,6 +1,6 @@
 import { users, messages, type User, type InsertUser, type Message, type InsertMessage } from "@shared/schema";
 import { db } from "./db";
-import { eq, or, and, asc } from "drizzle-orm";
+import { eq, or, and, asc, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -23,12 +23,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
+    await db.insert(users).values(insertUser);
+    const user = await this.getUserByUsername(insertUser.username);
+    if (!user) throw new Error("Failed to create user");
     return user;
   }
 
   async createMessage(message: InsertMessage & { senderId: number }): Promise<Message> {
-    const [newMessage] = await db.insert(messages).values(message).returning();
+    await db.insert(messages).values(message);
+    // Get the most recently created message
+    const [newMessage] = await db.select()
+      .from(messages)
+      .orderBy(desc(messages.id))
+      .limit(1);
+    if (!newMessage) throw new Error("Failed to create message");
     return newMessage;
   }
 

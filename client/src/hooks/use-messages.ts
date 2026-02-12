@@ -77,6 +77,7 @@ export function useMessages(userId?: number) {
 export function useSendMessage() {
   const queryClient = useQueryClient();
   const socket = useSocket();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async (data: InsertMessage) => {
@@ -90,15 +91,14 @@ export function useSendMessage() {
       return api.messages.create.responses[201].parse(await res.json());
     },
     onSuccess: (newMessage) => {
-      // Optimistically update the UI immediately
-      if (socket) {
-        socket.emit("message", newMessage);
-      }
-      
-      // Update local cache for the receiver
+      // Only add to cache for sender (receiver gets it via socket)
       queryClient.setQueryData(
         [api.messages.list.path, newMessage.receiverId],
-        (old: any[] | undefined) => [...(old || []), newMessage]
+        (old: any[] | undefined) => {
+          // Prevent duplicates by checking if message already exists
+          if (old?.some(msg => msg.id === newMessage.id)) return old;
+          return [...(old || []), newMessage];
+        }
       );
     },
   });

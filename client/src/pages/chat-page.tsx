@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Send, User, MessageSquareOff, Smile, Paperclip } from "lucide-react";
+import { Search, Send, User, MessageSquareOff, Smile, Paperclip, Sparkles, Image as ImageIcon, X } from "lucide-react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 
 interface ChatPartner {
   id: number;
@@ -22,6 +23,9 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeChat, setActiveChat] = useState<ChatPartner | null>(null);
   const [messageInput, setMessageInput] = useState("");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { data: searchResult, isLoading: isSearching } = useSearchUser(searchQuery);
   const { data: messages, isLoading: isMessagesLoading } = useMessages(activeChat?.id);
@@ -36,6 +40,18 @@ export default function ChatPage() {
     }
   }, [messages]);
 
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (showEmojiPicker && !target.closest('.emoji-picker-container')) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
   };
@@ -48,13 +64,35 @@ export default function ChatPage() {
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeChat || !messageInput.trim()) return;
+    if (!activeChat || (!messageInput.trim() && !selectedImage)) return;
+
+    let content = messageInput.trim();
+    if (selectedImage) {
+      content = selectedImage + (content ? `\n${content}` : "");
+    }
 
     sendMessage({
       receiverId: activeChat.id,
-      content: messageInput.trim(),
+      content,
     });
     setMessageInput("");
+    setSelectedImage(null);
+    setShowEmojiPicker(false);
+  };
+
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    setMessageInput(prev => prev + emojiData.emoji);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
@@ -167,13 +205,30 @@ export default function ChatPage() {
                         >
                           <div className={`max-w-[75%] md:max-w-[60%] flex flex-col ${isMe ? "items-end" : "items-start"}`}>
                             <div
-                              className={`px-5 py-3 rounded-2xl shadow-sm text-sm relative group ${
+                              className={`px-5 py-3 rounded-2xl shadow-sm text-sm relative group overflow-hidden ${
                                 isMe
                                   ? "bg-gradient-to-br from-primary to-indigo-600 text-white rounded-tr-sm"
                                   : "bg-white border border-border/60 text-foreground rounded-tl-sm"
                               }`}
                             >
-                              {msg.content}
+                              {msg.content.startsWith('data:image/') ? (
+                                <div className="space-y-2">
+                                  {msg.content.split('\n').map((line, idx) => 
+                                    line.startsWith('data:image/') ? (
+                                      <img 
+                                        key={idx}
+                                        src={line} 
+                                        alt="Shared" 
+                                        className="max-w-[300px] max-h-[300px] rounded-lg object-cover"
+                                      />
+                                    ) : line ? (
+                                      <p key={idx}>{line}</p>
+                                    ) : null
+                                  )}
+                                </div>
+                              ) : (
+                                msg.content
+                              )}
                             </div>
                             <span className="text-[10px] text-muted-foreground mt-1 px-1">
                               {msg.createdAt ? format(new Date(msg.createdAt), "h:mm a") : "Just now"}
@@ -199,23 +254,71 @@ export default function ChatPage() {
               <div className="p-4 bg-white border-t">
                 <form onSubmit={handleSend} className="flex items-end gap-3 max-w-4xl mx-auto">
                   <div className="flex-1 relative">
+                    {selectedImage && (
+                      <div className="mb-2 relative inline-block">
+                        <img 
+                          src={selectedImage} 
+                          alt="Preview" 
+                          className="max-w-[200px] max-h-[200px] rounded-lg border-2 border-primary/20"
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                          onClick={() => setSelectedImage(null)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
                     <Input
                       placeholder="Type your message..."
-                      className="min-h-[50px] py-3 pl-4 pr-12 rounded-xl border-border/60 focus:ring-primary/20 bg-slate-50"
+                      className="min-h-[50px] py-3 pl-4 pr-24 rounded-xl border-border/60 focus:ring-primary/20 bg-slate-50"
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-primary">
-                        <Smile className="w-4 h-4" />
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageSelect}
+                        accept="image/*"
+                        className="hidden"
+                        aria-label="Upload image"
+                      />
+                      <Button 
+                        type="button" 
+                        size="icon" 
+                        variant="ghost" 
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <ImageIcon className="w-4 h-4" />
                       </Button>
+                      <div className="relative emoji-picker-container">
+                        <Button 
+                          type="button" 
+                          size="icon" 
+                          variant="ghost" 
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        >
+                          <Smile className="w-4 h-4" />
+                        </Button>
+                        {showEmojiPicker && (
+                          <div className="absolute bottom-12 right-0 z-50">
+                            <EmojiPicker onEmojiClick={handleEmojiClick} />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <Button 
                     type="submit" 
                     size="icon" 
                     className="h-[50px] w-[50px] rounded-xl shrink-0 shadow-md shadow-primary/20"
-                    disabled={!messageInput.trim() || isSending}
+                    disabled={(!messageInput.trim() && !selectedImage) || isSending}
                     variant="gradient"
                   >
                     <Send className="w-5 h-5 ml-0.5" />
